@@ -1,0 +1,17 @@
+{
+  "name": "neurocraft-lumosity-clone",
+  "version": "1.0.0",
+  "description": "Lumosity-style Cognitive Training & Brain Game Platform with 1v1 Duels and AI DDA",
+  "private": true,
+  "scripts": {
+    "install:all": "npm install && npm --prefix server install && npm --prefix client install",
+    "server": "npm --prefix server run dev",
+    "client": "npm --prefix client run dev",
+    "db:migrate": "npm --prefix server run db:migrate",
+    "db:seed": "npm --prefix server run db:seed",
+    "dev": "concurrently \"npm run server\" \"npm run client\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

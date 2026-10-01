@@ -1,0 +1,213 @@
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id            String         @id @default(uuid())
+  email         String         @unique
+  username      String         @unique
+  passwordHash  String
+  avatarUrl     String?
+  streakDays    Int            @default(0)
+  lastPlayedAt  DateTime?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  // Cognitive Domain Scores (BPI - Brain Performance Index, Default 500)
+  overallBpi    Int            @default(500)
+  memoryBpi     Int            @default(500)
+  attentionBpi  Int            @default(500)
+  speedBpi      Int            @default(500)
+  flexBpi       Int            @default(500)
+  logicBpi      Int            @default(500)
+
+  // Relations
+  profile       UserProfile?
+  settings      UserSettings?
+  bpiHistory    UserBpiHistory[]
+  achievements  UserAchievement[]
+  duelStats     UserDuelStats?
+  gameSessions  GameSession[]
+  workouts      DailyWorkout[]
+  duelsAsP1     DuelMatch[]    @relation("Player1Duels")
+  duelsAsP2     DuelMatch[]    @relation("Player2Duels")
+}
+
+model UserProfile {
+  id             String    @id @default(uuid())
+  userId         String    @unique
+  birthYear      Int?
+  gender         String?   // 'MALE', 'FEMALE', 'OTHER', 'PREFER_NOT_TO_SAY'
+  educationLevel String?   // 'HIGH_SCHOOL', 'BACHELORS', 'MASTERS', 'PHD'
+  primaryGoal    String?   // 'MEMORY', 'ATTENTION', 'SPEED', 'LOGIC', 'GENERAL'
+  occupation     String?
+
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model UserSettings {
+  id             String    @id @default(uuid())
+  userId         String    @unique
+  soundEnabled   Boolean   @default(true)
+  soundVolume    Float     @default(0.8)
+  theme          String    @default("DARK")
+  dailyReminder  Boolean   @default(true)
+  reminderTime   String    @default("09:00") // 'HH:mm'
+
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model UserBpiHistory {
+  id           String    @id @default(uuid())
+  userId       String
+  recordedDate DateTime  @default(now())
+  overallBpi   Int
+  memoryBpi    Int
+  attentionBpi Int
+  speedBpi     Int
+  flexBpi      Int
+  logicBpi     Int
+
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, recordedDate])
+}
+
+model Achievement {
+  id            String            @id // e.g. 'first-step', 'streak-7', 'speed-demon', 'memory-master'
+  title         String
+  description   String
+  badgeIcon     String            // Lucide icon name or svg
+  category      String            // 'STREAK', 'BPI', 'GAMES', 'DUEL'
+  requiredValue Int               // e.g. 7 for 7-day streak, 1000 for 1000 BPI
+  xpReward      Int               @default(50)
+
+  users         UserAchievement[]
+}
+
+model UserAchievement {
+  id            String      @id @default(uuid())
+  userId        String
+  achievementId String
+  unlockedAt    DateTime    @default(now())
+
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  achievement   Achievement @relation(fields: [achievementId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, achievementId])
+}
+
+model Game {
+  id           String             @id // e.g. 'spatial-matrix', 'lost-in-flight', 'stroop-rush', 'rail-master', 'digit-flash', 'flash-math', 'cup-stack'
+  title        String
+  category     String             // 'MEMORY', 'ATTENTION', 'SPEED', 'FLEXIBILITY', 'LOGIC'
+  description  String
+  instructions String?
+  iconName     String?
+  accentColor  String?
+  
+  sessions     GameSession[]
+  workoutSteps DailyWorkoutStep[]
+}
+
+model GameSession {
+  id            String              @id @default(uuid())
+  userId        String
+  gameId        String
+  score         Int
+  rawAccuracy   Float               // 0.0 - 1.0 (e.g. 0.95 = 95%)
+  avgReactionMs Float               // Reaction time in milliseconds
+  maxLevel      Int
+  bpiEarned     Int                 // BPI delta or session calculation
+  completedAt   DateTime            @default(now())
+
+  user          User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  game          Game                @relation(fields: [gameId], references: [id])
+  rounds        GameSessionRound[]
+  workoutSteps  DailyWorkoutStep[]
+
+  @@index([userId, completedAt])
+  @@index([gameId, score])
+}
+
+model GameSessionRound {
+  id             String      @id @default(uuid())
+  sessionId      String
+  roundNumber    Int
+  level          Int
+  isCorrect      Boolean
+  reactionTimeMs Int
+  metadataJson   String?     // Specific questions, target patterns, wrong inputs in JSON
+
+  session        GameSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, roundNumber])
+}
+
+model DailyWorkout {
+  id          String             @id @default(uuid())
+  userId      String
+  date        String             // 'YYYY-MM-DD'
+  isCompleted Boolean            @default(false)
+  gamesConfig String             // JSON stringified array of game config for backward compatibility
+  completedAt DateTime?
+
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  steps       DailyWorkoutStep[]
+
+  @@unique([userId, date])
+}
+
+model DailyWorkoutStep {
+  id          String        @id @default(uuid())
+  workoutId   String
+  gameId      String
+  stepOrder   Int           // 1, 2, 3
+  phase       String        // 'Isınma', 'Ana Görev', 'Zirve Mücadele'
+  completed   Boolean       @default(false)
+  sessionId   String?
+
+  workout     DailyWorkout  @relation(fields: [workoutId], references: [id], onDelete: Cascade)
+  game        Game          @relation(fields: [gameId], references: [id])
+  session     GameSession?  @relation(fields: [sessionId], references: [id])
+
+  @@unique([workoutId, stepOrder])
+}
+
+model DuelMatch {
+  id           String    @id @default(uuid())
+  player1Id    String
+  player2Id    String
+  gameId       String
+  player1Score Int       @default(0)
+  player2Score Int       @default(0)
+  winnerId     String?
+  gameSeed     String    // Seed for identical question sequences
+  createdAt    DateTime  @default(now())
+
+  player1      User      @relation("Player1Duels", fields: [player1Id], references: [id], onDelete: Cascade)
+  player2      User      @relation("Player2Duels", fields: [player2Id], references: [id], onDelete: Cascade)
+
+  @@index([player1Id, createdAt])
+  @@index([player2Id, createdAt])
+}
+
+model UserDuelStats {
+  id               String   @id @default(uuid())
+  userId           String   @unique
+  eloRating        Int      @default(1200)
+  totalWins        Int      @default(0)
+  totalLosses      Int      @default(0)
+  totalTies        Int      @default(0)
+  currentWinStreak Int      @default(0)
+  bestWinStreak    Int      @default(0)
+  updatedAt        DateTime @updatedAt
+
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
